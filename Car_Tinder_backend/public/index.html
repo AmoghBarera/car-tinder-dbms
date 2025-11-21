@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Car Tinder - DBMS Project</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+    html, body { height: 100%; overflow-y: auto !important; overflow-x: hidden; }
+    .card-container { perspective: 2000px; }
+    .card { transition: transform 0.4s ease, opacity 0.4s ease; transform-style: preserve-3d; }
+    .feedback { position: absolute; top: 40px; font-size: 3rem; font-weight: bold; opacity: 0;
+      text-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
+    .feedback.like { color: #22c55e; left: 20px; transform: rotate(-15deg); }
+    .feedback.nope { color: #ef4444; right: 20px; transform: rotate(15deg); }
+  </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4">
+
+  <h1 class="text-4xl font-bold text-gray-800 mb-2">🚗 Car Tinder</h1>
+  <p class="text-gray-500 mb-4">Swipe right to like, left to pass.</p>
+
+  <div id="card-stack" class="relative w-full max-w-xl h-[560px] card-container mb-6"></div>
+
+  <!-- LIKE/DISLIKE + TEST DRIVE BUTTONS -->
+  <div class="flex justify-center items-center space-x-8 mb-4">
+    <button id="dislike-btn"
+      class="bg-white h-20 w-20 flex items-center justify-center rounded-full shadow-lg text-red-500 hover:scale-110 transition">
+      <i class="fas fa-times fa-3x"></i>
+    </button>
+
+    <button id="like-btn"
+      class="bg-white h-20 w-20 flex items-center justify-center rounded-full shadow-lg text-green-500 hover:scale-110 transition">
+      <i class="fas fa-heart fa-3x"></i>
+    </button>
+
+    <!-- Test Drive Button -->
+    <button id="testdrive-btn"
+      class="bg-blue-500 h-20 w-20 flex items-center justify-center rounded-full shadow-lg text-white hover:scale-110 transition">
+      <i class="fas fa-calendar-check fa-2x"></i>
+    </button>
+  </div>
+
+  <div class="text-center mt-2">
+    <button id="show-liked-btn" class="text-blue-500 font-semibold hover:underline">Show My Liked Cars</button>
+    <button id="reset-likes-btn" class="text-red-500 font-semibold hover:underline ml-4">Reset My Likes</button>
+  </div>
+
+  <!-- Liked Cars Modal -->
+  <div id="liked-cars-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
+      <div class="p-4 border-b flex justify-between items-center">
+        <h2 class="text-2xl font-bold">My Liked Cars ❤️</h2>
+        <button id="close-modal-btn" class="text-gray-500 hover:text-gray-800"><i class="fas fa-times fa-2x"></i></button>
+      </div>
+      <div class="p-4 border-b flex justify-end">
+        <button id="reset-likes-btn-modal" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition">Reset Likes</button>
+      </div>
+      <div id="liked-cars-list" class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div id="no-likes-message" class="hidden p-6 flex-grow text-gray-500 text-center">You haven't liked any cars yet!</div>
+    </div>
+  </div>
+
+  <!-- Test Drive Modal -->
+  <div id="testdrive-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <h2 class="text-xl font-bold mb-4">Schedule Test Drive</h2>
+      <p id="td-car-name" class="text-lg font-semibold mb-3"></p>
+      <label class="block mb-2 font-medium">Select Date:</label>
+      <input type="date" id="testdrive-date" class="w-full p-2 border rounded-lg mb-4" min="">
+      <div class="flex justify-end space-x-3">
+        <button id="cancel-td-btn" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400">Cancel</button>
+        <button id="confirm-td-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Book</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const API_BASE = "http://localhost:5000";
+  const USER_ID = 1;
+
+  let carsData = [];
+  let likedCars = [];
+  let currentCard = null;
+  let currentCarForTestDrive = null;
+
+  const cardStack = document.getElementById("card-stack");
+  const likeBtn = document.getElementById("like-btn");
+  const dislikeBtn = document.getElementById("dislike-btn");
+  const testDriveBtn = document.getElementById("testdrive-btn");
+
+  const showLikedBtn = document.getElementById("show-liked-btn");
+  const resetLikesBtn = document.getElementById("reset-likes-btn");
+  const resetLikesBtnModal = document.getElementById("reset-likes-btn-modal");
+  const likedCarsModal = document.getElementById("liked-cars-modal");
+  const closeModalBtn = document.getElementById("close-modal-btn");
+  const likedCarsList = document.getElementById("liked-cars-list");
+  const noLikesMessage = document.getElementById("no-likes-message");
+
+  const testDriveModal = document.getElementById("testdrive-modal");
+  const tdCarName = document.getElementById("td-car-name");
+  const tdDate = document.getElementById("testdrive-date");
+  const tdCancel = document.getElementById("cancel-td-btn");
+  const tdConfirm = document.getElementById("confirm-td-btn");
+
+  // load cars
+  async function loadCars() {
+    try {
+      const res = await fetch(`${API_BASE}/cars`);
+      carsData = await res.json();
+      // reverse to show first item from array start (optional)
+      // carsData = carsData.reverse();
+      displayNextCard();
+    } catch (err) {
+      console.error("Error loading cars:", err);
+      cardStack.innerHTML = `<div class='text-center text-gray-500 p-4'>Failed to load cars.</div>`;
+    }
+  }
+
+  function createCardElement(car) {
+    const card = document.createElement("div");
+    card.className = "card absolute w-full h-full bg-white rounded-2xl overflow-hidden shadow-xl cursor-pointer";
+    card.innerHTML = `
+      <img src="${car.image_url}" class="w-full h-2/3 object-cover">
+      <div class="p-4">
+        <h2 class="text-2xl font-bold">${car.brand} ${car.model}</h2>
+        <p class="text-gray-600 text-lg">${car.year} • ₹${car.price.toLocaleString()}</p>
+        <p class="text-sm text-gray-500 mt-1">Dealer: ${car.dealer_name || "N/A"}</p>
+        <p class="text-yellow-500 text-sm mt-1">⭐ ${Number(car.avg_rating || 0).toFixed(1)} | ❤️ ${car.total_likes || 0}</p>
+        <div class="flex flex-wrap text-xs text-gray-600 mt-2 gap-3">
+          <span class="flex items-center"><i class="fas fa-gas-pump mr-1"></i>${car.fuel_type}</span>
+          <span class="flex items-center"><i class="fas fa-cogs mr-1"></i>${car.transmission}</span>
+          <span class="flex items-center"><i class="fas fa-users mr-1"></i>${car.seating_capacity} Seats</span>
+        </div>
+      </div>
+      <div class="feedback like">LIKE</div>
+      <div class="feedback nope">NOPE</div>
+    `;
+    return card;
+  }
+
+  function displayNextCard() {
+    cardStack.innerHTML = "";
+    const nextCar = carsData.pop(); // pop keeps last element on top; adjust as you prefer
+    if (nextCar) {
+      currentCard = createCardElement(nextCar);
+      currentCarForTestDrive = nextCar;
+      cardStack.appendChild(currentCard);
+      addSwipeListeners(currentCard);
+    } else {
+      cardStack.innerHTML =
+        `<div class='flex items-center justify-center h-full bg-gray-200 rounded-2xl text-gray-500 text-lg'>
+           That's all the cars for now!
+         </div>`;
+    }
+  }
+
+  // Swipe logic (mouse + touch) + feedback
+  function addSwipeListeners(el) {
+    let startX = null, moveX = 0;
+    const likeFeedback = el.querySelector(".like");
+    const nopeFeedback = el.querySelector(".nope");
+
+    function onStart(e) {
+      startX = e.touches ? e.touches[0].clientX : e.clientX;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onEnd);
+      document.addEventListener("touchmove", onMove);
+      document.addEventListener("touchend", onEnd);
+    }
+
+    function onMove(e) {
+      if (startX === null) return;
+      moveX = (e.touches ? e.touches[0].clientX : e.clientX) - startX;
+      el.style.transform = `translateX(${moveX}px) rotate(${moveX * 0.1}deg)`;
+      const opacity = Math.min(Math.abs(moveX) / 100, 1);
+      if (moveX > 0) { likeFeedback.style.opacity = opacity; nopeFeedback.style.opacity = 0; }
+      else { nopeFeedback.style.opacity = opacity; likeFeedback.style.opacity = 0; }
+    }
+
+    function onEnd() {
+      if (Math.abs(moveX) > 120) {
+        handleSwipe(moveX > 0 ? "like" : "dislike");
+      } else {
+        el.style.transform = "";
+      }
+      likeFeedback.style.opacity = 0;
+      nopeFeedback.style.opacity = 0;
+      startX = null;
+      moveX = 0;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onEnd);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+    }
+
+    el.addEventListener("mousedown", onStart);
+    el.addEventListener("touchstart", onStart);
+  }
+
+  // handle swipe decisions
+  async function handleSwipe(decision) {
+    if (!currentCard) return;
+    const dir = decision === "like" ? 1 : -1;
+    currentCard.style.transform = `translateX(${dir * 500}px) rotate(${dir * 30}deg)`;
+    currentCard.style.opacity = 0;
+
+    if (decision === "like") {
+      // extract car id from currentCarForTestDrive (we set it in displayNextCard)
+      const carId = currentCarForTestDrive ? currentCarForTestDrive.car_id : null;
+      if (carId) {
+        try {
+          await likeCar(carId);
+        } catch (e) {
+          console.warn("Like failed:", e);
+        }
+      }
+    }
+
+    // wait animation then show next
+    setTimeout(() => displayNextCard(), 350);
+  }
+
+  // like API call
+  function likeCar(car_id) {
+    return fetch("/api/like", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: USER_ID, car_id })
+    });
+  }
+
+  // --- Test Drive Modal ---
+  testDriveBtn.onclick = () => {
+    if (!currentCarForTestDrive) return alert("No car selected");
+    tdCarName.textContent = `${currentCarForTestDrive.brand} ${currentCarForTestDrive.model}`;
+    // set min to today's date (format YYYY-MM-DD)
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    tdDate.min = `${yyyy}-${mm}-${dd}`;
+    tdDate.value = "";
+    testDriveModal.classList.remove("hidden");
+  };
+  tdCancel.onclick = () => testDriveModal.classList.add("hidden");
+
+  tdConfirm.onclick = async () => {
+    if (!tdDate.value) return alert("Please select a date");
+    try {
+      const res = await fetch(`${API_BASE}/testdrive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: USER_ID,
+          car_id: currentCarForTestDrive.car_id,
+          date: tdDate.value
+        })
+      });
+      const data = await res.json();
+      if (res.ok) alert(data.message || "Test drive booked!");
+      else alert(data.message || "Could not book test drive");
+      testDriveModal.classList.add("hidden");
+    } catch (err) {
+      console.error(err);
+      alert("Error booking test drive.");
+      testDriveModal.classList.add("hidden");
+    }
+  };
+
+  // --- Liked Cars / Reset ---
+  async function renderLikedCars() {
+    likedCarsList.innerHTML = "";
+    try {
+      const res = await fetch(`${API_BASE}/liked/${USER_ID}`);
+      const data = await res.json();
+      likedCars = data || [];
+      if (likedCars.length === 0) {
+        noLikesMessage.classList.remove("hidden");
+      } else {
+        noLikesMessage.classList.add("hidden");
+        likedCars.forEach(car => {
+          const el = document.createElement("div");
+          el.className = "bg-gray-100 rounded-lg overflow-hidden shadow-md";
+          el.innerHTML = `<img src="${car.image_url}" class="w-full h-40 object-cover">
+            <div class="p-3"><h3 class="font-bold">${car.brand} ${car.model}</h3></div>`;
+          likedCarsList.appendChild(el);
+        });
+      }
+    } catch (err) {
+      console.error("Error loading liked cars:", err);
+    }
+  }
+
+  async function resetLikes() {
+    try {
+      await fetch("/api/resetLikes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: USER_ID })
+      });
+      alert("All likes reset!");
+      renderLikedCars();
+    } catch (err) {
+      console.error(err);
+      alert("Could not reset likes");
+    }
+  }
+
+  // event bindings
+  showLikedBtn.onclick = () => { renderLikedCars(); likedCarsModal.classList.remove("hidden"); };
+  resetLikesBtn.onclick = () => resetLikes();
+  resetLikesBtnModal.onclick = () => resetLikes();
+  closeModalBtn.onclick = () => likedCarsModal.classList.add("hidden");
+
+  // wire buttons to swipe handler
+  likeBtn.onclick = () => handleSwipe("like");
+  dislikeBtn.onclick = () => handleSwipe("dislike");
+
+  // initial load
+  loadCars();
+</script>
+
+</body>
+</html>
